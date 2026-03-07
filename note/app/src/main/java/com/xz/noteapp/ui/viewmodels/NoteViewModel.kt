@@ -1,11 +1,11 @@
 package com.xz.noteapp.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.xz.noteapp.data.NoteRepository
 import com.xz.noteapp.data.entities.Note
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -35,5 +35,17 @@ class NoteViewModel(
 
     fun deleteAllNotes() = viewModelScope.launch(Dispatchers.IO) {
         noteRepository.deleteAllNotes()
+    }
+}
+
+class NoteViewModelFactory(
+    private var repository: NoteRepository
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(NoteViewModel::class.java)) {
+            return NoteViewModel(repository) as T
+        } else {
+            throw IllegalArgumentException("Unknow viewModel")
+        }
     }
 }
