@@ -2,11 +2,12 @@
 """
 Meal Planner MCP Server.
 
-Exposes four tools via MCP:
+Exposes five tools via MCP:
   - suggest_meals: Search recipes via Spoonacular API
   - filter_by_diet: Find recipes matching dietary restrictions
   - generate_grocery_list: Consolidate ingredients from selected recipes
   - cost_estimate: Estimate grocery cost using a local price table
+  - plan_weekly_meals: Generate a balanced 7-day meal plan
 
 Requires: SPOONACULAR_API_KEY environment variable.
 Free tier: 150 points/day (each search ~1 pt).
@@ -115,6 +116,17 @@ def _recipe_summary(r: dict) -> dict:
     }
 
 
+def _format_meal(meal: dict) -> dict:
+    """Extract a compact summary from a mealplanner meal object."""
+    return {
+        "id": meal.get("id"),
+        "title": meal.get("title"),
+        "readyInMinutes": meal.get("readyInMinutes"),
+        "servings": meal.get("servings"),
+        "sourceUrl": meal.get("sourceUrl", ""),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Input models
 # ---------------------------------------------------------------------------
@@ -193,6 +205,32 @@ class CostEstimateInput(BaseModel):
         description="List of ingredient names (e.g. ['chicken breast', 'rice', 'broccoli'])",
         min_length=1,
         max_length=100,
+    )
+
+
+class PlanWeeklyMealsInput(BaseModel):
+    """Input for weekly meal plan generation."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    target_calories: int = Field(
+        default=2000,
+        description="Daily calorie target (1200-4000)",
+        ge=1200,
+        le=4000,
+    )
+    diet: Optional[str] = Field(
+        default=None,
+        description=(
+            "Diet type: vegetarian, vegan, glutenFree, dairyFree, "
+            "ketogenic, paleo, whole30, pescetarian"
+        ),
+        max_length=50,
+    )
+    exclude: Optional[str] = Field(
+        default=None,
+        description="Comma-separated ingredients to exclude (e.g. 'shellfish, olives')",
+        max_length=500,
     )
 
 
@@ -443,6 +481,93 @@ async def cost_estimate(
                 "total": round(total, 2),
                 "currency": "USD",
                 "note": "Prices are rough estimates from a local table.",
+            },
+            indent=2,
+        )
+    except Exception as e:
+        return _handle_error(e)
+
+
+@mcp.tool(
+    name="plan_weekly_meals",
+    annotations={
+        "title": "Plan Weekly Meals",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def plan_weekly_meals(
+    target_calories: int = 2000,
+    diet: str = "",
+    exclude: str = "",
+) -> str:
+    """Generate a balanced 7-day meal plan.
+
+    Creates a weekly meal plan with 3 meals per day, balanced around
+    a daily calorie target.  Returns per-day nutritional summaries
+    and a flat list of all recipe IDs for use with generate_grocery_list.
+
+    Args:
+        target_calories: Daily calorie target, 1200-4000 (default 2000)
+        diet: Optional diet type (e.g. 'vegetarian', 'vegan', 'ketogenic')
+        exclude: Optional comma-separated ingredients to exclude (e.g. 'shellfish, olives')
+
+    Returns:
+        JSON object with:
+        {
+          "week": {
+            "monday": {
+              "meals": [{id, title, readyInMinutes, servings, sourceUrl}, ...],
+              "nutrients": {calories, protein, fat, carbohydrates}
+            },
+            ...
+          },
+          "all_recipe_ids": [int, ...],
+          "target_calories": int
+        }
+    """
+    try:
+        target_calories = min(max(target_calories, 1200), 4000)
+        api_params: dict[str, Any] = {
+            "timeFrame": "week",
+            "targetCalories": target_calories,
+        }
+        if diet:
+            api_params["diet"] = diet.strip().lower()
+        if exclude:
+            api_params["exclude"] = exclude.strip()
+
+        data = await _spoonacular_get("mealplanner/generate", api_params)
+
+        days = [
+            "monday", "tuesday", "wednesday", "thursday",
+            "friday", "saturday", "sunday",
+        ]
+        week: dict[str, Any] = {}
+        all_recipe_ids: list[int] = []
+
+        for day in days:
+            day_data = data.get("week", {}).get(day, {})
+            meals = [_format_meal(m) for m in day_data.get("meals", [])]
+            nutrients = day_data.get("nutrients", {})
+            week[day] = {
+                "meals": meals,
+                "nutrients": {
+                    "calories": nutrients.get("calories", 0),
+                    "protein": nutrients.get("protein", 0),
+                    "fat": nutrients.get("fat", 0),
+                    "carbohydrates": nutrients.get("carbohydrates", 0),
+                },
+            }
+            all_recipe_ids.extend(m["id"] for m in meals if m["id"] is not None)
+
+        return json.dumps(
+            {
+                "week": week,
+                "all_recipe_ids": all_recipe_ids,
+                "target_calories": target_calories,
             },
             indent=2,
         )

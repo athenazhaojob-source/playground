@@ -20,6 +20,7 @@ Results are cached in-memory (5 min TTL) to conserve Spoonacular's free-tier quo
 | `filter_by_diet` | Find recipes matching a diet: vegetarian, vegan, glutenFree, dairyFree, ketogenic, paleo, whole30, pescetarian. |
 | `generate_grocery_list` | Consolidate ingredients from one or more recipe IDs. Merges duplicates, groups by aisle. |
 | `cost_estimate` | Estimate grocery cost from a list of ingredient names using a local price table (`prices.json`). |
+| `plan_weekly_meals` | Generate a balanced 7-day meal plan with 3 meals/day, daily nutrition summaries, and a flat recipe-ID list for `generate_grocery_list`. |
 
 ## Setup
 

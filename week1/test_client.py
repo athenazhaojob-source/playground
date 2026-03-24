@@ -75,7 +75,24 @@ async def main():
             print(f"  Price-matched: {matched}/{len(cost['line_items'])} items")
             print()
 
-            print("Done! All three steps completed successfully.")
+            # Step 4: Plan weekly meals
+            print("=== Step 4: plan_weekly_meals(target_calories=2000) ===")
+            result = await session.call_tool(
+                "plan_weekly_meals",
+                arguments={"target_calories": 2000},
+            )
+            plan = json.loads(result.content[0].text)
+            print(f"  Target: {plan['target_calories']} cal/day")
+            print(f"  Total recipes: {len(plan['all_recipe_ids'])}")
+            monday = plan["week"]["monday"]
+            print(f"  Monday meals:")
+            for m in monday["meals"]:
+                print(f"    - {m['title']} ({m['readyInMinutes']} min)")
+            n = monday["nutrients"]
+            print(f"  Monday nutrients: {n['calories']:.0f} cal, {n['protein']:.0f}g protein")
+            print()
+
+            print("Done! All four steps completed successfully.")
 
 
 if __name__ == "__main__":
